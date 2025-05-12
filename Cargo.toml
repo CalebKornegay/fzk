@@ -1,0 +1,10 @@
+[package]
+name = "fzk"
+version = "0.0.1"
+authors = ["Caleb Kornegay <caleb.kornegay@gmail.com>"]
+edition = "2021"
+description = "Fuzzy killer for processes"
+license-file = "LICENSE"
+
+[dependencies]
+nucleo = "0.5.0"
