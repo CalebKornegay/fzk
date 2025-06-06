@@ -1,0 +1,255 @@
+use std::{collections::HashMap, process::Command, u64};
+use rust_fuzzy_search::fuzzy_search_threshold;
+
+pub trait ProcessMonitor {
+    fn get_procs_from_system(&mut self) -> ();
+    fn kill_proc(&mut self, proc: &Process) -> ();
+    fn kill_proc_list(&mut self, name: &str) -> ();
+    fn get_proc_by_name(&self, search: &str) -> Option<&Vec<Process>>;
+    fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<&Vec<Process>>>;
+}
+
+// #[cfg(target_os = "windows")]
+// const KILL_COMMAND: &'static str = "taskkill /T";
+// #[cfg(any(target_os = "linux", target_os = "macos"))]
+// const KILL_COMMAND: &'static str = "kill";
+
+// #[cfg(target_os = "windows")]
+// const UPDATE_COMMAND: &'static str = "tasklist /NH /FO TABLE";
+// #[cfg(any(target_os = "linux", target_os = "macos"))]
+// const UPDATE_COMMAND: &'static str = "ps -A --format comm,pid,%mem,%cpu";
+
+#[cfg(target_os = "windows")]
+pub const HEADERS: [&'static str; 3] = ["Command", "PID", "Memory Usage"];
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub const HEADERS: [&'static str; 4] = ["Command", "PID", "Memory Usage", "CPU Usage"];
+
+#[derive(Clone)]
+pub struct Process {
+    command: String,
+    pid: u64,
+    mem: String,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    cpu: String
+}
+
+
+impl Process {
+    pub fn new() -> Self {
+        Self {
+            command: String::new(),
+            pid: u64::MAX,
+            mem: String::new(),
+             #[cfg(any(target_os = "linux", target_os = "macos"))]
+            cpu: String::new()
+        }
+    }
+
+    pub fn get_command(&self) -> &'_ String {
+        &self.command
+    }
+
+    pub fn get_pid(&self) -> u64 {
+        self.pid
+    }
+
+    pub fn get_mem(&self) -> &str {
+        &self.mem
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub fn get_cpu(&self) -> &str {
+        &self.cpu
+    }
+}
+
+pub struct Monitor {
+    interval: f32,
+    threshold: f32,
+    pub current_procs: HashMap<String, Vec<Process>>,
+}
+
+impl Monitor {
+    pub fn new(inter: f32, thres: f32) -> Self {
+        Self {
+            interval: inter,
+            threshold: thres,
+            current_procs: HashMap::new(),
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn print_all_procs(&self) -> () {
+        self.current_procs.iter().for_each(|proclist| {
+            proclist.1.iter().for_each(|proc| {
+                println!("{} {}", proc.command, proc.pid);
+            })
+        })
+    }
+}
+
+impl ProcessMonitor for Monitor {
+    fn get_proc_by_name(&self, search: &str) -> Option<&Vec<Process>> {
+        self.current_procs.get(search)
+    }
+
+    fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<&Vec<Process>>> {
+        let procs = self.current_procs.keys().map(String::as_str).collect::<Vec<&'_ str>>();
+        let matches = fuzzy_search_threshold(search, &procs, self.threshold).iter().map(|&(key, _)| key).collect::<Vec<&'_ str>>();
+
+        if matches.len() == 0 {
+            None
+        } else {
+            Some(
+                matches.iter()
+                .filter(|&key| key.len() > 0)
+                .map(|&key| {
+                    self.current_procs.get(key).unwrap()
+                })
+                .collect::<Vec<&Vec<Process>>>()
+            )
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn get_procs_from_system(&mut self) -> () {
+        // Get the current list of processes
+        let output = Command::new("tasklist")
+            .args("/NH /FO TABLE".split(" "))
+            .output()
+            .expect("Failed to exec tasklist");
+
+        // Check to see if the command executed successfully
+        if !output.status.success() {
+            return;
+        }
+        let Ok(res) = String::from_utf8(output.stdout) else {
+            return;
+        };
+
+        // Clean out the old processes since we have a new list
+        self.current_procs.clear();
+
+        res.split("\n").for_each(|line| {
+            // Iterate over every task and insert the process into the vector attached to that command (includes children)
+            let mut p: Process = Process::new();
+            let mut units: &str = "";
+
+            // The columns are gotten from TABLE format in tasklist
+            line.split_ascii_whitespace().enumerate().for_each(|(i, col)| {
+                match i {
+                    0 => p.command = col.to_string(),
+                    1 => p.pid = col.parse::<u64>().unwrap_or(u64::MAX),
+                    4 => p.mem = col.to_string(),
+                    5 => units = col,
+                    _ => (),
+                }
+            });
+
+            // Add the bytes units to the number
+            p.mem.push_str(units);
+            p.mem.push_str("iB");
+            self.current_procs.entry(p.command.clone()).or_default().push(p);
+        });
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn get_procs_from_system(&mut self) -> () {
+        // Get the current list of processes
+        let output = Command::new("ps")
+            .args("-A --format comm,pid,%mem,%cpu".split(" "))
+            .output()
+            .expect("Failed to exec ps");
+
+        // Check to see if the command executed successfully
+        if !output.status.success() {
+            return;
+        }
+        let Ok(res) = String::from_utf8(output.stdout) else {
+            return;
+        };
+
+        self.current_procs.clear();
+
+        res.split("\n").for_each(|line| {
+            let mut p: Process = Process::new();
+            let mut comm: String = String::new();
+
+            line.split(" ").enumerate().for_each(|(i, col)| {
+                match i {
+                    0 => comm = col.to_string(),
+                    1 => p.pid = col.parse::<u64>().unwrap_or(u64::MAX),
+                    2 => p.mem = col.to_string(),
+                    3 => p.cpu = col.to_string(),
+                    _ => (),
+                }
+            });
+
+            self.current_procs.entry(comm).or_default().push(p);
+        });
+    }
+
+    fn kill_proc_list(&mut self, name: &str) -> () {
+        let proc_list = match self.current_procs.get(name) {
+            None => vec![],
+            Some(r) => r.to_vec(),
+        };
+        proc_list
+        .iter()
+        .for_each(|p| self.kill_proc(&p));
+    }
+
+    #[cfg(target_os = "windows")]
+    fn kill_proc(&mut self, proc: &Process) -> () {
+        let res = Command::new("taskkill")
+            .arg("/T")
+            .arg("/F")
+            .arg("/PID")
+            .arg(proc.pid.to_string())
+            .output();
+
+        let Ok(output) = res else {
+            return;
+        };
+
+        if !output.status.success() {
+            return;
+        }
+
+        if let Some(pl) = self.current_procs.get_mut(&proc.command) {
+            let mut spot: usize = 0;
+            pl.iter().enumerate().for_each(|(i, p)| {
+                if p.get_command() == proc.get_command() {
+                    spot = i;
+                }
+            });
+            pl.remove(spot);
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn kill_proc(&mut self, proc: &Process) -> () {
+        let res = Command::new("kill")
+            .arg(proc.pid.to_string())
+            .output();
+
+        let Ok(output) = res else {
+            return;
+        };
+
+        if !output.status.success() {
+            return;
+        }
+
+        if let Some(pl) = self.current_procs.get_mut(&proc.command) {
+            let mut spot: usize = 0;
+            pl.iter().enumerate().for_each(|(i, p)| {
+                if p.get_command() == proc.get_command() {
+                    spot = i;
+                }
+            });
+            pl.remove(spot);
+        }
+    }
+}
+
