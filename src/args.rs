@@ -15,4 +15,7 @@ pub struct Args {
 
     #[arg(short = 'i', long, help="The update interval for processes in seconds (default 3)")]
     pub update_interval: Option<f32>,
+
+    #[arg(short = 'n', long, help="The maximum number of matches from fuzzy matcher (default 20)")]
+    pub num_matches: Option<usize>
 }

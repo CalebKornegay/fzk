@@ -20,7 +20,8 @@ impl App {
             current_line: 0,
             monitor: Monitor::new(
                 args.update_interval.unwrap_or(3.0),
-                args.threshold.unwrap_or(0.6)
+                args.threshold.unwrap_or(0.6),
+                args.num_matches.unwrap_or(20)
             )
         }
     }

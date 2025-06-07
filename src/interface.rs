@@ -45,7 +45,7 @@ impl Process {
         }
     }
 
-    pub fn get_command(&self) -> &'_ String {
+    pub fn get_command(&self) -> &str {
         &self.command
     }
 
@@ -66,25 +66,29 @@ impl Process {
 pub struct Monitor {
     interval: f32,
     threshold: f32,
+    num_matches: usize,
     pub current_procs: HashMap<String, Vec<Process>>,
 }
 
 impl Monitor {
-    pub fn new(inter: f32, thres: f32) -> Self {
+    pub fn new(inter: f32, thres: f32, num: usize) -> Self {
         Self {
             interval: inter,
             threshold: thres,
+            num_matches: num,
             current_procs: HashMap::new(),
         }
     }
 
     #[cfg(debug_assertions)]
     pub fn print_all_procs(&self) -> () {
-        self.current_procs.iter().for_each(|proclist| {
-            proclist.1.iter().for_each(|proc| {
-                println!("{} {}", proc.command, proc.pid);
-            })
-        })
+        self.current_procs.iter()
+            .for_each(|proclist| {
+                proclist.1.iter()
+                    .for_each(|proc| {
+                        println!("{} {}", proc.command, proc.pid);
+                });
+        });
     }
 }
 
@@ -94,8 +98,15 @@ impl ProcessMonitor for Monitor {
     }
 
     fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<&Vec<Process>>> {
-        let procs = self.current_procs.keys().map(String::as_str).collect::<Vec<&'_ str>>();
-        let matches = fuzzy_search_threshold(search, &procs, self.threshold).iter().map(|&(key, _)| key).collect::<Vec<&'_ str>>();
+        let procs = self.current_procs
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<&str>>();
+
+        let matches = fuzzy_search_threshold(search, &procs, self.threshold)
+            .iter().map(|&(key, _)| key)
+            .take(self.num_matches)
+            .collect::<Vec<&str>>();
 
         if matches.len() == 0 {
             None
@@ -136,20 +147,25 @@ impl ProcessMonitor for Monitor {
             let mut units: &str = "";
 
             // The columns are gotten from TABLE format in tasklist
-            line.split_ascii_whitespace().enumerate().for_each(|(i, col)| {
-                match i {
-                    0 => p.command = col.to_string(),
-                    1 => p.pid = col.parse::<u64>().unwrap_or(u64::MAX),
-                    4 => p.mem = col.to_string(),
-                    5 => units = col,
-                    _ => (),
-                }
-            });
+            line.split_ascii_whitespace()
+                .enumerate()
+                .for_each(|(i, col)| {
+                    match i {
+                        0 => p.command = col.to_string(),
+                        1 => p.pid = col.parse::<u64>().unwrap_or(u64::MAX),
+                        4 => p.mem = col.to_string(),
+                        5 => units = col,
+                        _ => (),
+                    }
+                });
 
             // Add the bytes units to the number
             p.mem.push_str(units);
             p.mem.push_str("iB");
-            self.current_procs.entry(p.command.clone()).or_default().push(p);
+            self.current_procs
+                .entry(p.command.clone())
+                .or_default()
+                .push(p);
         });
     }
 
@@ -185,7 +201,10 @@ impl ProcessMonitor for Monitor {
                 }
             });
 
-            self.current_procs.entry(comm).or_default().push(p);
+            self.current_procs
+                .entry(comm)
+                .or_default()
+                .push(p);
         });
     }
 
@@ -195,8 +214,8 @@ impl ProcessMonitor for Monitor {
             Some(r) => r.to_vec(),
         };
         proc_list
-        .iter()
-        .for_each(|p| self.kill_proc(&p));
+            .iter()
+            .for_each(|p| self.kill_proc(&p));
     }
 
     #[cfg(target_os = "windows")]
@@ -218,11 +237,14 @@ impl ProcessMonitor for Monitor {
 
         if let Some(pl) = self.current_procs.get_mut(&proc.command) {
             let mut spot: usize = 0;
-            pl.iter().enumerate().for_each(|(i, p)| {
-                if p.get_command() == proc.get_command() {
-                    spot = i;
-                }
-            });
+            pl.iter()
+                .enumerate()
+                .for_each(|(i, p)| {
+                    if p.get_command() == proc.get_command() {
+                        spot = i;
+                    }
+                });
+
             pl.remove(spot);
         }
     }
@@ -243,13 +265,15 @@ impl ProcessMonitor for Monitor {
 
         if let Some(pl) = self.current_procs.get_mut(&proc.command) {
             let mut spot: usize = 0;
-            pl.iter().enumerate().for_each(|(i, p)| {
-                if p.get_command() == proc.get_command() {
-                    spot = i;
-                }
-            });
+            pl.iter()
+                .enumerate()
+                .for_each(|(i, p)| {
+                    if p.get_command() == proc.get_command() {
+                        spot = i;
+                    }
+                });
+
             pl.remove(spot);
         }
     }
 }
-
