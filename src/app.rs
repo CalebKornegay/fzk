@@ -28,7 +28,8 @@ impl App {
                 Mutex::new(
                     Monitor::new(
                         args.update_interval.unwrap_or(3.0),
-                        args.threshold.unwrap_or(0.3)
+                        args.threshold.unwrap_or(0.3),
+                        args.num_matches.unwrap_or(20)
                     )
                 )
             ),
