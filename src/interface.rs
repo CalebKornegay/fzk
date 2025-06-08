@@ -5,8 +5,9 @@ pub trait ProcessMonitor {
     fn get_procs_from_system(&mut self) -> ();
     fn kill_proc(&mut self, proc: &Process) -> ();
     fn kill_proc_list(&mut self, name: &str) -> ();
-    fn get_proc_by_name(&self, search: &str) -> Option<&Vec<Process>>;
-    fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<&Vec<Process>>>;
+    fn get_proc_by_name(&self, search: &str) -> Option<Vec<Process>>;
+    fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<Vec<Process>>>;
+    fn get_all_procs(&self) -> Option<Vec<Vec<Process>>>;
 }
 
 // #[cfg(target_os = "windows")]
@@ -45,8 +46,8 @@ impl Process {
         }
     }
 
-    pub fn get_command(&self) -> &'_ String {
-        &self.command
+    pub fn get_command(&self) -> &str {
+        self.command.as_str()
     }
 
     pub fn get_pid(&self) -> u64 {
@@ -66,7 +67,7 @@ impl Process {
 pub struct Monitor {
     interval: f32,
     threshold: f32,
-    pub current_procs: HashMap<String, Vec<Process>>,
+    current_procs: HashMap<String, Vec<Process>>,
 }
 
 impl Monitor {
@@ -76,6 +77,10 @@ impl Monitor {
             threshold: thres,
             current_procs: HashMap::new(),
         }
+    }
+
+    pub fn get_interval(&self) -> f32 {
+        self.interval
     }
 
     #[cfg(debug_assertions)]
@@ -89,13 +94,25 @@ impl Monitor {
 }
 
 impl ProcessMonitor for Monitor {
-    fn get_proc_by_name(&self, search: &str) -> Option<&Vec<Process>> {
-        self.current_procs.get(search)
+    fn get_proc_by_name(&self, search: &str) -> Option<Vec<Process>> {
+        self.current_procs.get(search).cloned()
     }
 
-    fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<&Vec<Process>>> {
-        let procs = self.current_procs.keys().map(String::as_str).collect::<Vec<&'_ str>>();
-        let matches = fuzzy_search_threshold(search, &procs, self.threshold).iter().map(|&(key, _)| key).collect::<Vec<&'_ str>>();
+    fn get_all_procs(&self) -> Option<Vec<Vec<Process>>> {
+        if self.current_procs.len() == 0 {
+            None
+        } else {
+            Some(
+                self.current_procs.iter().map(|(_, v)| {
+                    v.clone()
+                }).collect::<Vec<Vec<Process>>>()
+            )
+        }
+    }
+
+    fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<Vec<Process>>> {
+        let procs = self.current_procs.keys().map(String::as_str).collect::<Vec<&str>>();
+        let matches = fuzzy_search_threshold(search, &procs, self.threshold).iter().map(|&(key, _)| key).collect::<Vec<&str>>();
 
         if matches.len() == 0 {
             None
@@ -104,9 +121,9 @@ impl ProcessMonitor for Monitor {
                 matches.iter()
                 .filter(|&key| key.len() > 0)
                 .map(|&key| {
-                    self.current_procs.get(key).unwrap()
+                    self.current_procs.get(key).unwrap().clone()
                 })
-                .collect::<Vec<&Vec<Process>>>()
+                .collect::<Vec<Vec<Process>>>()
             )
         }
     }
@@ -130,7 +147,7 @@ impl ProcessMonitor for Monitor {
         // Clean out the old processes since we have a new list
         self.current_procs.clear();
 
-        res.split("\n").for_each(|line| {
+        res.lines().for_each(|line| {
             // Iterate over every task and insert the process into the vector attached to that command (includes children)
             let mut p: Process = Process::new();
             let mut units: &str = "";
@@ -149,7 +166,7 @@ impl ProcessMonitor for Monitor {
             // Add the bytes units to the number
             p.mem.push_str(units);
             p.mem.push_str("iB");
-            self.current_procs.entry(p.command.clone()).or_default().push(p);
+            self.current_procs.entry(p.command.clone().replace(".exe", "").to_lowercase()).or_default().push(p);
         });
     }
 
@@ -171,13 +188,13 @@ impl ProcessMonitor for Monitor {
 
         self.current_procs.clear();
 
-        res.split("\n").for_each(|line| {
+        res.lines().skip(1).for_each(|line| {
             let mut p: Process = Process::new();
             let mut comm: String = String::new();
 
-            line.split(" ").enumerate().for_each(|(i, col)| {
+            line.split_ascii_whitespace().enumerate().for_each(|(i, col)| {
                 match i {
-                    0 => comm = col.to_string(),
+                    0 => p.command = col.to_string(),
                     1 => p.pid = col.parse::<u64>().unwrap_or(u64::MAX),
                     2 => p.mem = col.to_string(),
                     3 => p.cpu = col.to_string(),
@@ -185,7 +202,7 @@ impl ProcessMonitor for Monitor {
                 }
             });
 
-            self.current_procs.entry(comm).or_default().push(p);
+            self.current_procs.entry(p.command.clone().to_lowercase()).or_default().push(p);
         });
     }
 
@@ -230,6 +247,7 @@ impl ProcessMonitor for Monitor {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn kill_proc(&mut self, proc: &Process) -> () {
         let res = Command::new("kill")
+            .arg("-9")
             .arg(proc.pid.to_string())
             .output();
 
@@ -238,6 +256,7 @@ impl ProcessMonitor for Monitor {
         };
 
         if !output.status.success() {
+            eprintln!("Not successful, pid = {}", proc.pid.to_string());
             return;
         }
 

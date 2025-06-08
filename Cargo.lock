@@ -278,6 +278,7 @@ dependencies = [
  "nucleo",
  "ratatui",
  "rust-fuzzy-search",
+ "scopeguard",
 ]
 
 [[package]]

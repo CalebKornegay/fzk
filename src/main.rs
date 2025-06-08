@@ -8,6 +8,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::io::stdout;
 use std::error::Error;
+use scopeguard::defer;
 
 use crate::interface::{ProcessMonitor, Monitor};
 
@@ -25,6 +26,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let res = app.run(&mut terminal);
+
+    defer!(
+        app.join_threads();
+    );
 
     // Restore terminal
     disable_raw_mode()?;
@@ -49,10 +54,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // monitor.get_procs_from_system();
 
-    // if let Some(res) = monitor.get_procs_by_name_fuzzy("chrome") {
-    //     res.iter().for_each(|&proclist| {
+    // if let Some(res) = monitor.get_all_procs() {
+    //     res.iter().for_each(|proclist| {
     //         proclist.iter().for_each(|proc| {
-    //             println!("{} {} {}", proc.get_command(), proc.get_pid(), proc.get_mem());
+    //             println!("{} {} {} {}", proc.get_command(), proc.get_pid(), proc.get_mem(), proc.get_cpu());
     //         })
     //     })
     // }

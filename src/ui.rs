@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use ratatui::{layout::{Constraint, Direction, Flex, Layout, Rect}, style::{Color, Style}, text::Line, widgets::{Block, Borders, Paragraph}, Frame};
 
 pub struct Ui;
@@ -9,8 +8,8 @@ impl Ui {
                     
         let mut help_text = keybinds_text.clone().iter()
             .map(|&l| {
-                if l == "[h] help" {
-                    Line::from("[h] to exit this screen")
+                if l == "[ctrl+h] help" {
+                    Line::from("[ctrl+h] to exit this screen")
                 } else {
                     Line::from(l)
                 }
@@ -18,11 +17,16 @@ impl Ui {
             .collect::<Vec<Line>>();
         help_text.extend_from_slice(
             &[
-                Line::from("[\u{2195}] move up and down using arrow keys or mouse")
+                Line::from("[\u{2195}] use arrow keys or mouse to move up and down"),
+                Line::from("Enter characters to fuzzy search for processes"),
             ]
         );
 
-        let b = Self::center_rect(frame.area(), Constraint::Length(help_text.iter().map(|l| l.width()).max().unwrap() as u16), Constraint::Length(help_text.len() as u16 + 2));
+        let b = Self::center_rect(frame.area(), 
+            Constraint::Length(help_text.iter()
+                .map(|l| l.width()).max().unwrap() as u16),
+            Constraint::Length(help_text.len() as u16 + 2));
+
         frame.render_widget(
             Paragraph::new(help_text), b
         );
@@ -32,7 +36,9 @@ impl Ui {
         let [area] = Layout::horizontal([horizontal])
             .flex(Flex::Center)
             .areas(area);
-        let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
+        let [area] = Layout::vertical([vertical])
+            .flex(Flex::Center)
+            .areas(area);
         area
     }
     
