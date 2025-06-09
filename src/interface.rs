@@ -23,7 +23,7 @@ pub trait ProcessMonitor {
 #[cfg(target_os = "windows")]
 pub const HEADERS: [&'static str; 3] = ["Command", "PID", "Memory Usage"];
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-pub const HEADERS: [&'static str; 4] = ["Command", "PID", "Memory Usage", "CPU Usage"];
+pub const HEADERS: [&'static str; 4] = ["Command", "PID", "Memory Usage (%)", "CPU Usage (%)"];
 
 #[derive(Clone)]
 pub struct Process {
@@ -33,7 +33,6 @@ pub struct Process {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     cpu: String
 }
-
 
 impl Process {
     pub fn new() -> Self {
@@ -173,10 +172,13 @@ impl ProcessMonitor for Monitor {
                     }
                 });
 
-            // Add the bytes units to the number
-            p.mem.push_str(units);
-            p.mem.push_str("iB");
-            self.current_procs.entry(p.command.clone().replace(".exe", "").to_lowercase()).or_default().push(p);
+            if p.pid != u64::MAX {
+                // Add the bytes units to the number
+                p.mem.push_str(" ");
+                p.mem.push_str(units);
+                p.mem.push_str("iB");
+                self.current_procs.entry(p.command.clone().replace(".exe", "").to_lowercase()).or_default().push(p);
+            }
         });
     }
 

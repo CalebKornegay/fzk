@@ -17,6 +17,7 @@ impl Ui {
             .collect::<Vec<Line>>();
         help_text.extend_from_slice(
             &[
+                Line::from("[ctrl+r] reset scroll"),
                 Line::from("[\u{2195}] use arrow keys or mouse to move up and down"),
                 Line::from("Enter characters to fuzzy search for processes"),
             ]

@@ -1,10 +1,10 @@
 use std::{sync::{Arc, Mutex}, thread::{self, JoinHandle}, time::{Duration, SystemTime}};
 
 use clap::Parser;
-use ratatui::{crossterm::event::{KeyEventKind, KeyModifiers, MouseEventKind}, layout::{Constraint, Rect}, style::{Color, Style}, text::{Line, Span}, widgets::{Block, Borders, Paragraph}, Terminal};
+use ratatui::{crossterm::event::{KeyEventKind, KeyModifiers, MouseEventKind}, layout::{Constraint, Layout, Margin, Rect}, style::{Color, Style}, text::{Line, Span}, widgets::{Block, Borders, Paragraph}, Terminal};
 use ratatui::crossterm::event::{self, Event, KeyCode};
 
-use crate::interface::{Monitor, Process, ProcessMonitor};
+use crate::interface::{Monitor, Process, ProcessMonitor, HEADERS};
 use crate::args::Args;
 use crate::ui::Ui;
 
@@ -88,13 +88,14 @@ impl App {
         let mut search_input = String::new();
         let mut current_procs: Vec<Vec<Process>> = Vec::new();
         let mut num_lines: usize = 0;
+        let mut current_process: Process = Process::new();
+        const HEADER_LEN: usize = HEADERS.len();
 
         let keybinds_text = vec![
             "[ctrl+h] help",
             "[ctrl+(q|c)] quit",
             "[ctrl+k] kill process",
             "[ctrl+b] clear search",
-            "[ctrl+r] reset scroll"
         ];
 
         // Background thread to collect data
@@ -127,61 +128,111 @@ impl App {
                     _ => ()
                 }
 
-                let proc_names = Paragraph::new(
-                    current_procs
+                let mut proc_info: Vec<Vec<Line>> = vec![Vec::new(); HEADER_LEN];
+
+                current_procs
                     .iter()
                     .flat_map(|proc_l| {
                         proc_l.iter().map(|proc| {
-                            proc.get_command()
+                            proc
                         })
-                        .collect::<Vec<&str>>()
+                        .collect::<Vec<&Process>>()
                     })
                     .skip(self.current_line)
                     .take(num_lines)
                     .enumerate()
-                    .map(|(i, command)| {
+                    .for_each(|(i, proc)|{
                         if i == self.pointer {
-                            Line::styled(command, Style::new().fg(Color::LightBlue))
+                            let style = Style::new().fg(Color::LightBlue);
+                            current_process = proc.clone();
+
+                            proc_info[0].push(
+                                Line::styled(
+                                    proc.get_command(), 
+                                    style.clone()
+                                )
+                            );
+                            proc_info[1].push(
+                                Line::styled(
+                                    proc.get_pid().to_string(),
+                                    style.clone()
+                                )
+                            );
+                            proc_info[2].push(
+                                Line::styled(
+                                    proc.get_mem(),
+                                    style.clone()
+                                )
+                            );
+                            #[cfg(any(target_os = "linux", target_os = "macos"))]
+                            proc_info[3].push(
+                                Line::styled(
+                                    proc.get_cpu(),
+                                    style
+                                )
+                            );
                         } else {
-                            Line::from(command)
+                            proc_info[0].push(Line::from(proc.get_command()));
+                            proc_info[1].push(
+                                Line::from(
+                                    proc.get_pid().to_string(),
+                                )
+                            );
+                            proc_info[2].push(
+                                Line::from(
+                                    proc.get_mem(),
+                                )
+                            );
+                            #[cfg(any(target_os = "linux", target_os = "macos"))]
+                            proc_info[3].push(
+                                Line::from(
+                                    proc.get_cpu(),
+                                )
+                            );
                         }
-                    })
-                    .collect::<Vec<Line>>()
-                );
-                let proc_names_rect = Rect::new(1, 1, current_area.width / 4, num_lines as u16);
+                    });
 
-                frame.render_widget(proc_names, proc_names_rect);
-
-                let current_search = Paragraph::new(search_input.clone())
-                    .block(Block::default()
+                let block = Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::Rgb(0x3a, 0x3a, 0x3a)))
-                        .title("Current Search")
                         .title_alignment(ratatui::layout::Alignment::Left)
                         .title_style(Style::default().fg(Color::Rgb(0xff, 0xff, 0xff)))
-                        .style(Style::default().bg(Color::Rgb(0x12, 0x12, 0x12)))
-                    );
-
+                        .style(Style::default().bg(Color::Rgb(0x12, 0x12, 0x12)));
+                
+                let current_search = Paragraph::new(search_input.clone())
+                    .block(block.clone().title("Current Search"));
                 let search_rect = Rect::new(0, num_lines as u16, current_area.width / 4, 3);
 
                 let help_text = Paragraph::new(keybinds_text.join("   "))
-                    .block(Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Rgb(0x3a, 0x3a, 0x3a)))
-                        .title("Keybinds")
-                        .title_alignment(ratatui::layout::Alignment::Left)
-                        .title_style(Style::default().fg(Color::Rgb(0xff, 0xff, 0xff)))
-                        .style(Style::default().bg(Color::Rgb(0x12, 0x12, 0x12)))
-                    )
+                    .block(block.clone().title("Keybinds"))
                     .alignment(ratatui::layout::Alignment::Center);
                 let help_rect = Rect::new(current_area.width / 4, num_lines as u16, current_area.width - current_area.width / 4, 3);
 
                 let proc_list_block = Ui::generate_block(String::from("Current Processes"));
                 let proc_rect =  Rect::new(0, 0, current_area.width, num_lines as u16);
 
+
+                let proc_rects = Layout::horizontal(
+                        proc_info.iter().map(|_| {
+                            Constraint::Percentage(100 / proc_info.len() as u16)
+                        })
+                        .collect::<Vec<Constraint>>()
+                    )
+                    .areas::<HEADER_LEN>(proc_rect.inner(Margin::new(1, 1)));
+
                 frame.render_widget(help_text, help_rect);
                 frame.render_widget(proc_list_block, proc_rect);
                 frame.render_widget(current_search, search_rect);
+
+                proc_rects.iter().zip(proc_info).enumerate().for_each(|(i, (rect, info))| {
+                    frame.render_widget(
+                        Paragraph::new(info)
+                        .block(
+                            block.clone().title(HEADERS[i])
+                        ), 
+                        *rect
+                    );
+                });
             })?;
 
             if let Ok(true) = event::poll(Duration::from_millis(50)) {
@@ -207,14 +258,7 @@ impl App {
                                     KeyCode::Char('k') => {
                                         self.monitor.lock()
                                             .unwrap()
-                                            .kill_proc(
-                                                &current_procs.iter()
-                                                .flatten()
-                                                .skip(self.current_line + self.pointer)
-                                                .take(1)
-                                                .collect::<Vec<&Process>>()
-                                                [0]
-                                            );
+                                            .kill_proc(&current_process);
                                     },
                                     KeyCode::Char('r') => {
                                         self.current_line = 0;
