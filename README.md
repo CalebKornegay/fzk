@@ -2,7 +2,7 @@
 Fzk -- Makes killing those pesky processes painless
 
 ## Windows
-![image](https://github.com/user-attachments/assets/063660ad-cb4d-443a-bfa8-b91a2bb6a163)
+![image](https://github.com/user-attachments/assets/dba6bcf7-9b97-4f54-b9b2-f88ae36ef3d9)
 
 ## Linux
 ![image](https://github.com/user-attachments/assets/c8d4e1ab-bc3e-44c7-bb26-dee2102714e7)
