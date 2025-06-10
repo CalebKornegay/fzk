@@ -87,6 +87,7 @@ impl App {
         let mut show_help = false;
         let mut search_input = String::new();
         let mut current_procs: Vec<Vec<Process>> = Vec::new();
+        let mut proc_list_size: usize = 0;
         let mut num_lines: usize = 0;
         let mut current_process: Process = Process::new();
         const HEADER_LEN: usize = HEADERS.len();
@@ -103,7 +104,7 @@ impl App {
         loop {
             terminal.draw(|frame| {
                 let current_area = frame.area();
-                num_lines = current_area.height as usize - 3;
+                proc_list_size = current_area.height as usize - 3;
 
                 if current_area.height < 6 {
                    return ();
@@ -201,16 +202,17 @@ impl App {
                 
                 let current_search = Paragraph::new(search_input.clone())
                     .block(block.clone().title("Current Search"));
-                let search_rect = Rect::new(0, num_lines as u16, current_area.width / 4, 3);
+                let search_rect = Rect::new(0, proc_list_size as u16, current_area.width / 4, 3);
 
                 let help_text = Paragraph::new(keybinds_text.join("   "))
                     .block(block.clone().title("Keybinds"))
                     .alignment(ratatui::layout::Alignment::Center);
-                let help_rect = Rect::new(current_area.width / 4, num_lines as u16, current_area.width - current_area.width / 4, 3);
+                let help_rect = Rect::new(current_area.width / 4, proc_list_size as u16, current_area.width - current_area.width / 4, 3);
 
                 let proc_list_block = Ui::generate_block(String::from("Current Processes"));
-                let proc_rect =  Rect::new(0, 0, current_area.width, num_lines as u16);
+                let proc_rect =  Rect::new(0, 0, current_area.width, proc_list_size as u16);
 
+                num_lines = proc_rect.inner(Margin::new(1,1)).height as usize;
 
                 let proc_rects = Layout::horizontal(
                         proc_info.iter().map(|_| {
@@ -254,7 +256,9 @@ impl App {
                                         }
                                         search_input.clear();
                                     },
-                                    KeyCode::Char('h') => show_help = !show_help,
+                                    KeyCode::Char('h') => {
+                                        show_help = !show_help
+                                    },
                                     KeyCode::Char('k') => {
                                         self.monitor.lock()
                                             .unwrap()
@@ -288,25 +292,37 @@ impl App {
                                             .flatten()
                                             .count();
 
+                                        let last_line = self.current_line;
+
                                         self.current_line = std::cmp::min(
                                             self.current_line + 1, 
-                                            count.saturating_sub(num_lines
-                                                .saturating_sub(2))
+                                            count.saturating_sub(
+                                                num_lines
+                                                .saturating_sub(2)
+                                            )
                                         );
 
-                                        if count - self.current_line < num_lines {
+                                        // We didn't move down
+                                        if self.current_line == last_line {
                                             self.pointer = std::cmp::min(
                                                 self.pointer + 1,
-                                                std::cmp::min(count, num_lines)
-                                                .saturating_sub(1)
+                                                count.saturating_sub(
+                                                    self.current_line
+                                                    .saturating_add(1)
+                                                )
                                             );
                                         }
                                     },
                                     KeyCode::Up => {
+                                        let last_line = self.current_line;
                                         self.current_line = 
                                             self.current_line.saturating_sub(1);
-                                        self.pointer = 
-                                            self.pointer.saturating_sub(1);
+
+                                        // We didn't move up
+                                        if last_line == self.current_line {
+                                            self.pointer = 
+                                                self.pointer.saturating_sub(1);
+                                        }
                                     },
                                     _ => ()
                                 }
@@ -320,25 +336,37 @@ impl App {
                                             .flatten()
                                             .count();
 
-                                    self.current_line = std::cmp::min(
-                                        self.current_line + 1, 
-                                        count.saturating_sub(num_lines
-                                            .saturating_sub(2))
-                                    );
+                                        let last_line = self.current_line;
 
-                                    if count - self.current_line < num_lines {
-                                        self.pointer = std::cmp::min(
-                                            self.pointer + 1,
-                                            std::cmp::min(count, num_lines)
-                                            .saturating_sub(1)
+                                        self.current_line = std::cmp::min(
+                                            self.current_line + 1, 
+                                            count.saturating_sub(
+                                                num_lines
+                                                .saturating_sub(2)
+                                            )
                                         );
-                                    }
+
+                                        // We didn't move down
+                                        if self.current_line == last_line {
+                                            self.pointer = std::cmp::min(
+                                                self.pointer + 1,
+                                                count.saturating_sub(
+                                                    self.current_line
+                                                    .saturating_add(1)
+                                                )
+                                            );
+                                        }
                                 },
                                 MouseEventKind::ScrollUp => {
-                                    self.current_line = 
-                                        self.current_line.saturating_sub(1);
-                                    self.pointer = 
-                                            self.pointer.saturating_sub(1);
+                                    let last_line = self.current_line;
+                                        self.current_line = 
+                                            self.current_line.saturating_sub(1);
+
+                                        // We didn't move up
+                                        if last_line == self.current_line {
+                                            self.pointer = 
+                                                self.pointer.saturating_sub(1);
+                                        }
                                 }
                                 _ => ()
                             }
