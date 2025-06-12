@@ -341,7 +341,7 @@ impl App {
                         .border_style(Style::default()
                             .fg(Color::Rgb(0x3a, 0x3a, 0x3a))
                         )
-                        .title_alignment(ratatui::layout::Alignment::Left)
+                        .title_alignment(ratatui::layout::Alignment::Center)
                         .title_style(Style::default()
                             .fg(self.text_color)
                         )
@@ -368,15 +368,16 @@ impl App {
                 .fg(self.text_color);
                 let proc_rect =  Rect::new(0, 0, current_area.width, proc_list_size as u16);
 
-                num_lines = proc_rect.inner(Margin::new(1,1)).height as usize;
+                let inner_proc_rect = proc_rect.inner(Margin::new(1, 1));
+                num_lines = inner_proc_rect.height as usize;
 
                 let proc_rects = Layout::horizontal(
                         proc_info.iter().map(|_| {
-                            Constraint::Percentage(100 / proc_info.len() as u16)
+                            Constraint::Ratio(1, proc_info.len() as u32)
                         })
                         .collect::<Vec<Constraint>>()
                     )
-                    .areas::<HEADER_LEN>(proc_rect.inner(Margin::new(1, 1)));
+                    .areas::<HEADER_LEN>(inner_proc_rect);
 
                 frame.render_widget(help_text, help_rect);
                 frame.render_widget(proc_list_block, proc_rect);
