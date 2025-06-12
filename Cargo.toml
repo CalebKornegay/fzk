@@ -1,6 +1,6 @@
 [package]
 name = "fzk"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Caleb Kornegay <caleb.kornegay@gmail.com>"]
 edition = "2021"
 description = "Fuzzy killer for processes"
