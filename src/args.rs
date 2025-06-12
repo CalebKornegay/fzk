@@ -4,7 +4,7 @@ use clap::Parser;
 #[command(
     name = "fzk",
     author = "Caleb Kornegay <caleb.kornegay@gmail.com>",
-    version = "0.0.1",
+    version = "0.0.3",
     about = "A TUI app to fuzzy find and kill pesky processes",
     long_about = "This tool helps you find pesky processes using fuzzy search.\nAuthor: Caleb Kornegay <caleb.kornegay@gmail.com>"
 )]
