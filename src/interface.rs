@@ -1,13 +1,12 @@
-use std::{collections::HashMap, process::Command, u64};
+use std::{cmp::Ordering, process::Command, u64};
 use rust_fuzzy_search::fuzzy_search_threshold;
 
 pub trait ProcessMonitor {
     fn get_procs_from_system(&mut self) -> ();
     fn kill_proc(&mut self, proc: &Process) -> ();
     fn kill_proc_list(&mut self, name: &str) -> ();
-    fn get_proc_by_name(&self, search: &str) -> Option<Vec<Process>>;
-    fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<Vec<Process>>>;
-    fn get_all_procs(&self) -> Option<Vec<Vec<Process>>>;
+    fn get_procs_by_name_fuzzy(&self, search: &str, search_pid: bool) -> Option<Vec<Process>>;
+    fn get_all_procs(&self) -> Option<Vec<Process>>;
 }
 
 // #[cfg(target_os = "windows")]
@@ -67,16 +66,16 @@ pub struct Monitor {
     interval: f32,
     threshold: f32,
     num_matches: usize,
-    current_procs: HashMap<String, Vec<Process>>,
+    current_procs: Vec<Process>
 }
 
 impl Monitor {
     pub fn new(inter: f32, thres: f32, num: usize) -> Self {
         Self {
-            interval: inter,
-            threshold: thres,
-            num_matches: num,
-            current_procs: HashMap::new(),
+            interval: inter.max(1.0),
+            threshold: thres.max(0.0).min(1.0),
+            num_matches: num.max(1),
+            current_procs: Vec::new(),
         }
     }
 
@@ -87,35 +86,51 @@ impl Monitor {
     #[cfg(debug_assertions)]
     pub fn print_all_procs(&self) -> () {
         self.current_procs.iter()
-            .for_each(|proclist| {
-                proclist.1.iter()
-                    .for_each(|proc| {
-                        println!("{} {}", proc.command, proc.pid);
+                .for_each(|proc| {
+                    println!("{} {}", proc.command, proc.pid);
                 });
-        });
     }
 }
 
 impl ProcessMonitor for Monitor {
-    fn get_proc_by_name(&self, search: &str) -> Option<Vec<Process>> {
-        self.current_procs.get(search).cloned()
-    }
-
-    fn get_all_procs(&self) -> Option<Vec<Vec<Process>>> {
+    fn get_all_procs(&self) -> Option<Vec<Process>> {
         if self.current_procs.len() == 0 {
             None
         } else {
             Some(
-                self.current_procs.iter().map(|(_, v)| {
-                    v.clone()
-                }).collect::<Vec<Vec<Process>>>()
+                self.current_procs.clone()
             )
         }
     }
 
-    fn get_procs_by_name_fuzzy(&self, search: &str) -> Option<Vec<Vec<Process>>> {
-        let procs = self.current_procs.keys().map(String::as_str).collect::<Vec<&str>>();
-        let matches = fuzzy_search_threshold(search, &procs, self.threshold)
+    fn get_procs_by_name_fuzzy(&self, search: &str, search_pid: bool) -> Option<Vec<Process>> {
+        let procs =
+            self.current_procs
+            .iter()
+            .map(|proc| {
+                if search_pid {
+                    proc.get_pid().to_string()
+                } else {
+                    proc.get_command().replace(".exe", "")
+                }
+            })
+            .collect::<Vec<String>>();
+        let refs = procs
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<&str>>();
+
+        let mut matches = fuzzy_search_threshold(search, &refs, self.threshold);
+        matches
+            .sort_by(|(_, score1), (_, score2)| {
+                if score1 > score2 {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            });
+        let matches = 
+            matches
             .iter()
             .map(|&(key, _)| key)
             .take(self.num_matches)
@@ -124,13 +139,25 @@ impl ProcessMonitor for Monitor {
         if matches.len() == 0 {
             None
         } else {
+            let mut ret: Vec<Process> = Vec::new();
+            matches
+                .iter()
+                .for_each(|&p| {
+                    if let Some(spot) = self.current_procs
+                        .iter()
+                        .position(|proc| {
+                            if search_pid {
+                                proc.get_pid().to_string() == p
+                            } else {
+                                proc.get_command().replace(".exe", "") == p
+                            }
+                        }) {
+                            ret.push(self.current_procs[spot].clone());
+                        }
+                });
+
             Some(
-                matches.iter()
-                .filter(|&key| key.len() > 0)
-                .map(|&key| {
-                    self.current_procs.get(key).unwrap().clone()
-                })
-                .collect::<Vec<Vec<Process>>>()
+                ret
             )
         }
     }
@@ -177,7 +204,7 @@ impl ProcessMonitor for Monitor {
                 p.mem.push_str(" ");
                 p.mem.push_str(units);
                 p.mem.push_str("iB");
-                self.current_procs.entry(p.command.clone().replace(".exe", "").to_lowercase()).or_default().push(p);
+                self.current_procs.push(p);
             }
         });
     }
@@ -214,15 +241,16 @@ impl ProcessMonitor for Monitor {
                 }
             });
 
-            self.current_procs.entry(p.command.clone().to_lowercase()).or_default().push(p);
+            self.current_procs.push(p);
         });
     }
 
     fn kill_proc_list(&mut self, name: &str) -> () {
-        let proc_list = match self.current_procs.get(name) {
-            None => vec![],
-            Some(r) => r.to_vec(),
-        };
+        let proc_list = self.current_procs
+            .iter()
+            .filter(|proc| proc.get_command() == name)
+            .map(|proc| proc.clone())
+            .collect::<Vec<Process>>();
         proc_list
             .iter()
             .for_each(|p| self.kill_proc(&p));
@@ -245,17 +273,10 @@ impl ProcessMonitor for Monitor {
             return;
         }
 
-        if let Some(pl) = self.current_procs.get_mut(&proc.command) {
-            let mut spot: usize = 0;
-            pl.iter()
-                .enumerate()
-                .for_each(|(i, p)| {
-                    if p.get_command() == proc.get_command() {
-                        spot = i;
-                    }
-                });
-
-            pl.remove(spot);
+        if let Some(spot) = self.current_procs
+            .iter()
+            .position(|p| p.get_pid() == proc.get_pid()) {
+            self.current_procs.remove(spot);
         }
     }
 
@@ -275,17 +296,10 @@ impl ProcessMonitor for Monitor {
             return;
         }
 
-        if let Some(pl) = self.current_procs.get_mut(&proc.command) {
-            let mut spot: usize = 0;
-            pl.iter()
-                .enumerate()
-                .for_each(|(i, p)| {
-                    if p.get_command() == proc.get_command() {
-                        spot = i;
-                    }
-                });
-
-            pl.remove(spot);
+        if let Some(spot) = self.current_procs
+            .iter()
+            .position(|p| p.get_pid() == proc.get_pid()) {
+            self.current_procs.remove(spot);
         }
     }
 }
